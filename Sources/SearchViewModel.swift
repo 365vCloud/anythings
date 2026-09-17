@@ -7,7 +7,11 @@ final class SearchViewModel: ObservableObject {
     private static let storedRootsKey = "IndexedRootPaths"
 
     @Published var query = "" {
-        didSet { updateResults() }
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
     }
     @Published var roots: [IndexedRoot] = [] {
         didSet { saveRoots() }
@@ -18,16 +22,26 @@ final class SearchViewModel: ObservableObject {
     @Published var indexProgress = 0.0
     @Published var statusText = "Ready"
     @Published var matchesFullPath = false {
-        didSet { updateResults() }
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
     }
     @Published var caseSensitive = false {
-        didSet { updateResults() }
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
     }
     @Published var showingError = false
     @Published var errorMessage = ""
 
     private var index: [IndexedFile] = []
+    private var spotlightResults: [IndexedFile] = []
     private var indexTask: Task<Void, Never>?
+    private var spotlightTask: Task<Void, Never>?
 
     init() {
         let savedPaths = UserDefaults.standard.stringArray(forKey: Self.storedRootsKey) ?? []
@@ -82,6 +96,7 @@ final class SearchViewModel: ObservableObject {
 
         guard !rootURLs.isEmpty else {
             index = []
+            spotlightResults = []
             results = []
             statusText = "Add a folder to begin"
             return
@@ -104,6 +119,7 @@ final class SearchViewModel: ObservableObject {
                 indexProgress = 1
                 statusText = "\(files.count.formatted()) items indexed"
                 updateResults()
+                scheduleSpotlightSearch()
             } catch {
                 guard !Task.isCancelled else {
                     return
@@ -132,10 +148,79 @@ final class SearchViewModel: ObservableObject {
             caseSensitive: caseSensitive
         )
 
-        results = index.lazy
-            .filter { search.matches($0) }
-            .prefix(2_000)
-            .map(SearchResult.init)
+        let searchableFiles = index + spotlightResults
+
+        var nextResults: [SearchResult] = []
+        var seenPaths = Set<String>()
+
+        for file in searchableFiles {
+            guard seenPaths.insert(file.url.path).inserted,
+                  search.matches(file) else {
+                continue
+            }
+
+            nextResults.append(SearchResult(file: file))
+
+            if nextResults.count >= 2_000 {
+                break
+            }
+        }
+
+        results = nextResults
+    }
+
+    private func scheduleSpotlightSearch() {
+        spotlightTask?.cancel()
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rootURLs = roots.map(\.url)
+
+        guard !trimmedQuery.isEmpty, !rootURLs.isEmpty else {
+            return
+        }
+
+        let requestMatchesFullPath = matchesFullPath
+        let requestCaseSensitive = caseSensitive
+
+        spotlightTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                statusText = isIndexing ? "Indexing files and searching..." : "Searching..."
+
+                let files = try await SpotlightSearch.search(
+                    query: trimmedQuery,
+                    roots: rootURLs,
+                    matchesFullPath: requestMatchesFullPath,
+                    caseSensitive: requestCaseSensitive
+                )
+
+                guard !Task.isCancelled,
+                      query.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery,
+                      matchesFullPath == requestMatchesFullPath,
+                      caseSensitive == requestCaseSensitive else {
+                    return
+                }
+
+                spotlightResults = files
+                updateResults()
+
+                if !isIndexing {
+                    statusText = results.isEmpty ? "No matches found" : "\(results.count.formatted()) matches"
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                errorMessage = error.localizedDescription
+                showingError = true
+                if !isIndexing {
+                    statusText = "Search failed"
+                }
+            }
+        }
     }
 
     private func saveRoots() {

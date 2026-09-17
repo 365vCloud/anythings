@@ -7,6 +7,7 @@ Anythings is a native macOS file search app inspired by voidtools Everything. It
 - Native SwiftUI macOS app.
 - User-selected folder indexing.
 - Fast in-memory search over file names and paths.
+- Spotlight-backed immediate search while local indexing is still running.
 - Everything-style wildcard matching with `*` and `?`.
 - Quoted phrase support, for example `"project report"`.
 - Optional full-path matching.
