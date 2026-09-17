@@ -1,17 +1,34 @@
 import Foundation
 
 struct SearchExpression {
+    /// File extensions treated as system, log, or transient artifacts and hidden from results by default.
+    private static let excludedExtensions: Set<String> = [
+        "log", "logs", "tmp", "temp", "cache", "bak", "swp", "swo",
+        "pid", "lock", "pyc", "o", "obj", "class", "crash", "dmp", "diagpb"
+    ]
+
+    /// Exact file names treated as system artifacts regardless of extension.
+    private static let excludedNames: Set<String> = [
+        ".ds_store", "thumbs.db", "desktop.ini", ".localized"
+    ]
+
     private let terms: [SearchTerm]
     private let matchesFullPath: Bool
     private let caseSensitive: Bool
+    private let hidesSystemFiles: Bool
 
-    init(rawQuery: String, matchesFullPath: Bool, caseSensitive: Bool) {
+    init(rawQuery: String, matchesFullPath: Bool, caseSensitive: Bool, hidesSystemFiles: Bool = true) {
         self.terms = SearchExpression.parse(rawQuery)
         self.matchesFullPath = matchesFullPath
         self.caseSensitive = caseSensitive
+        self.hidesSystemFiles = hidesSystemFiles
     }
 
     func matches(_ file: IndexedFile) -> Bool {
+        if hidesSystemFiles, !file.isDirectory, Self.isSystemFile(file) {
+            return false
+        }
+
         guard !terms.isEmpty else {
             return true
         }
@@ -22,6 +39,21 @@ struct SearchExpression {
         return terms.allSatisfy { term in
             term.matches(normalizedText, caseSensitive: caseSensitive)
         }
+    }
+
+    private static func isSystemFile(_ file: IndexedFile) -> Bool {
+        let lowercasedName = file.name.lowercased()
+
+        if excludedNames.contains(lowercasedName) {
+            return true
+        }
+
+        if lowercasedName.hasPrefix(".") {
+            return true
+        }
+
+        let fileExtension = (file.name as NSString).pathExtension.lowercased()
+        return !fileExtension.isEmpty && excludedExtensions.contains(fileExtension)
     }
 
     private static func parse(_ query: String) -> [SearchTerm] {

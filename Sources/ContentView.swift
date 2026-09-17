@@ -73,12 +73,23 @@ private struct SidebarView: View {
                                 Text(root.url.path)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
+
+                                Spacer()
+
+                                Button {
+                                    viewModel.removeRoot(root)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .help("Remove this folder from the index")
                             }
                             .contextMenu {
                                 Button("Reveal in Finder") {
                                     NSWorkspace.shared.activateFileViewerSelecting([root.url])
                                 }
-                                Button("Remove") {
+                                Button("Remove", role: .destructive) {
                                     viewModel.removeRoot(root)
                                 }
                             }
@@ -93,6 +104,7 @@ private struct SidebarView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Match full path", isOn: $viewModel.matchesFullPath)
                 Toggle("Case sensitive", isOn: $viewModel.caseSensitive)
+                Toggle("Hide system & log files", isOn: $viewModel.hidesSystemFiles)
             }
 
             Spacer()

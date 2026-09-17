@@ -35,6 +35,13 @@ final class SearchViewModel: ObservableObject {
             scheduleSpotlightSearch()
         }
     }
+    @Published var hidesSystemFiles = true {
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
+    }
     @Published var showingError = false
     @Published var errorMessage = ""
 
@@ -145,7 +152,8 @@ final class SearchViewModel: ObservableObject {
         let search = SearchExpression(
             rawQuery: query,
             matchesFullPath: matchesFullPath,
-            caseSensitive: caseSensitive
+            caseSensitive: caseSensitive,
+            hidesSystemFiles: hidesSystemFiles
         )
 
         let searchableFiles = index + spotlightResults
