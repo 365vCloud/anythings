@@ -26,7 +26,19 @@ enum SpotlightSearch {
             for root in roots {
                 try Task.checkCancellation()
 
-                let output = try runMDFind(predicate: predicate, root: root)
+                guard root.hasDirectoryPath else {
+                    continue
+                }
+
+                let output: String
+                do {
+                    output = try runMDFind(predicate: predicate, root: root)
+                } catch {
+                    // A single unreachable or unmounted root should not abort the whole search.
+                    NSLog("Spotlight search skipped for %@: %@", root.path, error.localizedDescription)
+                    continue
+                }
+
                 for path in output.split(separator: "\n", omittingEmptySubsequences: true) {
                     try Task.checkCancellation()
 
