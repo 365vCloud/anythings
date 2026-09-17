@@ -1,23 +1,7 @@
 import Foundation
 
-struct ScanProgress: Sendable {
-    let scannedCount: Int
-    let currentPath: String
-
-    var fractionCompleted: Double {
-        min(Double(scannedCount) / 25_000.0, 0.95)
-    }
-
-    var message: String {
-        "\(scannedCount.formatted()) items - \(currentPath)"
-    }
-}
-
 enum FileScanner {
-    static func scan(
-        urls: [URL],
-        progress: @escaping @Sendable (ScanProgress) -> Void
-    ) async throws -> [IndexedFile] {
+    static func scan(urls: [URL]) async throws -> [IndexedFile] {
         try await Task.detached(priority: .userInitiated) {
             var files: [IndexedFile] = []
             let resourceKeys: [URLResourceKey] = [
@@ -44,7 +28,7 @@ enum FileScanner {
                     includingPropertiesForKeys: resourceKeys,
                     options: [.skipsPackageDescendants],
                     errorHandler: { url, error in
-                        progress(ScanProgress(scannedCount: files.count, currentPath: "\(url.path): \(error.localizedDescription)"))
+                        NSLog("Skipping %@: %@", url.path, error.localizedDescription)
                         return true
                     }
                 ) else {
@@ -57,14 +41,9 @@ enum FileScanner {
                     if let file = IndexedFile(url: fileURL, resourceKeys: resourceKeys) {
                         files.append(file)
                     }
-
-                    if files.count.isMultiple(of: 500) {
-                        progress(ScanProgress(scannedCount: files.count, currentPath: fileURL.path))
-                    }
                 }
             }
 
-            progress(ScanProgress(scannedCount: files.count, currentPath: "Done"))
             return files
         }.value
     }

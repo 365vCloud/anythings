@@ -89,16 +89,11 @@ final class SearchViewModel: ObservableObject {
 
         isIndexing = true
         indexProgress = 0
-        statusText = "Preparing index..."
+        statusText = "Indexing files..."
 
         indexTask = Task {
             do {
-                let files = try await FileScanner.scan(urls: rootURLs) { [weak self] progress in
-                    Task { @MainActor in
-                        self?.indexProgress = progress.fractionCompleted
-                        self?.statusText = progress.message
-                    }
-                }
+                let files = try await FileScanner.scan(urls: rootURLs)
 
                 guard !Task.isCancelled else {
                     return

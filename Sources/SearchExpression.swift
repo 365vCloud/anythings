@@ -37,7 +37,9 @@ struct SearchExpression {
                     current = ""
                 }
                 inQuotes.toggle()
-            case " ", "\t", "\n" where !inQuotes:
+            case " " where !inQuotes,
+                 "\t" where !inQuotes,
+                 "\n" where !inQuotes:
                 if !current.isEmpty {
                     terms.append(SearchTerm(rawValue: current))
                     current = ""
