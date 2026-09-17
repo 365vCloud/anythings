@@ -12,6 +12,7 @@ Anythings is a native macOS file search app inspired by voidtools Everything. It
 - Optional full-path matching.
 - Finder integration: open item, reveal in Finder, copy path.
 - Re-index command for refreshing results.
+- Search-themed macOS app icon generated during packaging.
 
 ## Requirements
 

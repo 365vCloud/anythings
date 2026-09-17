@@ -8,6 +8,7 @@ BUILD_DIR="$ROOT_DIR/build"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 DMG_ROOT="$BUILD_DIR/dmg-root"
+ICONSET_DIR="$BUILD_DIR/$APP_NAME.iconset"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This packaging script must be run on macOS because it uses hdiutil." >&2
@@ -23,6 +24,9 @@ swift build -c release
 EXECUTABLE="$(swift build -c release --show-bin-path)/$APP_NAME"
 cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/$APP_NAME"
 
+python3 "$ROOT_DIR/scripts/generate-icon.py" "$ICONSET_DIR"
+iconutil -c icns "$ICONSET_DIR" -o "$APP_DIR/Contents/Resources/$APP_NAME.icns"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -36,6 +40,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
