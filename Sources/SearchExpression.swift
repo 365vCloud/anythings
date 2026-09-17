@@ -16,16 +16,28 @@ struct SearchExpression {
     private let matchesFullPath: Bool
     private let caseSensitive: Bool
     private let hidesSystemFiles: Bool
+    private let allowedExtensions: Set<String>
 
-    init(rawQuery: String, matchesFullPath: Bool, caseSensitive: Bool, hidesSystemFiles: Bool = true) {
+    init(
+        rawQuery: String,
+        matchesFullPath: Bool,
+        caseSensitive: Bool,
+        hidesSystemFiles: Bool = true,
+        allowedExtensions: Set<String> = []
+    ) {
         self.terms = SearchExpression.parse(rawQuery)
         self.matchesFullPath = matchesFullPath
         self.caseSensitive = caseSensitive
         self.hidesSystemFiles = hidesSystemFiles
+        self.allowedExtensions = allowedExtensions
     }
 
     func matches(_ file: IndexedFile) -> Bool {
         if hidesSystemFiles, !file.isDirectory, Self.isSystemFile(file) {
+            return false
+        }
+
+        if !allowedExtensions.isEmpty, !file.isDirectory, !allowedExtensions.contains(file.fileExtension) {
             return false
         }
 

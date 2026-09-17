@@ -33,6 +33,10 @@ struct IndexedFile: Hashable, Sendable {
         self.size = Int64(values.fileSize ?? 0)
         self.modifiedAt = values.contentModificationDate ?? .distantPast
     }
+
+    var fileExtension: String {
+        (name as NSString).pathExtension.lowercased()
+    }
 }
 
 struct SearchResult: Identifiable, Hashable {
@@ -52,6 +56,10 @@ struct SearchResult: Identifiable, Hashable {
         self.isDirectory = file.isDirectory
         self.size = file.size
         self.modifiedAt = file.modifiedAt
+    }
+
+    var fileExtension: String {
+        (name as NSString).pathExtension.lowercased()
     }
 
     var sizeDescription: String {

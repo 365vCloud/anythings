@@ -2,6 +2,53 @@ import AppKit
 import Combine
 import Foundation
 
+enum ResultViewMode: String, CaseIterable, Identifiable {
+    case table
+    case largeIcons
+    case smallIcons
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .table: return "Details"
+        case .largeIcons: return "Large Icons"
+        case .smallIcons: return "Small Icons"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .table: return "list.bullet"
+        case .largeIcons: return "square.grid.2x2"
+        case .smallIcons: return "square.grid.3x3"
+        }
+    }
+}
+
+enum SortField: String, CaseIterable, Identifiable {
+    case name
+    case path
+    case modified
+    case size
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .name: return "Name"
+        case .path: return "Path"
+        case .modified: return "Date Modified"
+        case .size: return "Size"
+        }
+    }
+}
+
+enum FileTransferAction {
+    case copy
+    case move
+}
+
 @MainActor
 final class SearchViewModel: ObservableObject {
     private static let storedRootsKey = "IndexedRootPaths"
@@ -17,7 +64,7 @@ final class SearchViewModel: ObservableObject {
         didSet { saveRoots() }
     }
     @Published var results: [SearchResult] = []
-    @Published var selectedResultID: SearchResult.ID?
+    @Published var selectedResultIDs: Set<SearchResult.ID> = []
     @Published var isIndexing = false
     @Published var indexProgress = 0.0
     @Published var statusText = "Ready"
@@ -41,6 +88,27 @@ final class SearchViewModel: ObservableObject {
             updateResults()
             scheduleSpotlightSearch()
         }
+    }
+    @Published var selectedFileTypeCategoryIDs: Set<String> = [] {
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
+    }
+    @Published var customExtensionsText = "" {
+        didSet {
+            spotlightResults = []
+            updateResults()
+            scheduleSpotlightSearch()
+        }
+    }
+    @Published var viewMode: ResultViewMode = .table
+    @Published var sortField: SortField = .name {
+        didSet { updateResults() }
+    }
+    @Published var sortAscending = true {
+        didSet { updateResults() }
     }
     @Published var showingError = false
     @Published var errorMessage = ""
@@ -140,12 +208,108 @@ final class SearchViewModel: ObservableObject {
         }
     }
 
-    func result(for ids: Set<SearchResult.ID>) -> SearchResult? {
-        guard let id = ids.first else {
-            return nil
+    func results(for ids: Set<SearchResult.ID>) -> [SearchResult] {
+        results.filter { ids.contains($0.id) }
+    }
+
+    var selectedResults: [SearchResult] {
+        results.filter { selectedResultIDs.contains($0.id) }
+    }
+
+    func selectAll() {
+        selectedResultIDs = Set(results.map(\.id))
+    }
+
+    func deselectAll() {
+        selectedResultIDs = []
+    }
+
+    func invertSelection() {
+        let allIDs = Set(results.map(\.id))
+        selectedResultIDs = allIDs.symmetricDifference(selectedResultIDs)
+    }
+
+    func openContainingFolders(_ items: [SearchResult]) {
+        let parentFolders = Set(items.map { $0.url.deletingLastPathComponent() })
+        for folder in parentFolders {
+            NSWorkspace.shared.open(folder)
+        }
+    }
+
+    func copyResults(_ items: [SearchResult]) {
+        performTransfer(action: .copy, on: items)
+    }
+
+    func moveResults(_ items: [SearchResult]) {
+        performTransfer(action: .move, on: items)
+    }
+
+    private func performTransfer(action: FileTransferAction, on items: [SearchResult]) {
+        guard !items.isEmpty else {
+            return
         }
 
-        return results.first { $0.id == id }
+        let panel = NSOpenPanel()
+        panel.title = action == .copy ? "Choose Destination to Copy" : "Choose Destination to Move"
+        panel.prompt = action == .copy ? "Copy" : "Move"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let destination = panel.urls.first else {
+            return
+        }
+
+        var failures: [String] = []
+
+        for item in items {
+            let destinationURL = destination.appendingPathComponent(item.url.lastPathComponent)
+
+            do {
+                guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
+                    throw CocoaError(.fileWriteFileExists)
+                }
+
+                switch action {
+                case .copy:
+                    try FileManager.default.copyItem(at: item.url, to: destinationURL)
+                case .move:
+                    try FileManager.default.moveItem(at: item.url, to: destinationURL)
+                }
+            } catch {
+                failures.append("\(item.name): \(error.localizedDescription)")
+            }
+        }
+
+        if action == .move {
+            reindex()
+        }
+
+        if !failures.isEmpty {
+            errorMessage = failures.joined(separator: "\n")
+            showingError = true
+        } else {
+            statusText = action == .copy
+                ? "Copied \(items.count) item(s) to \(destination.lastPathComponent)"
+                : "Moved \(items.count) item(s) to \(destination.lastPathComponent)"
+        }
+    }
+
+    private var allowedExtensions: Set<String> {
+        var extensions = Set<String>()
+
+        for category in FileTypeCatalog.categories where selectedFileTypeCategoryIDs.contains(category.id) {
+            extensions.formUnion(category.extensions)
+        }
+
+        let customExtensions = customExtensionsText
+            .split(whereSeparator: { $0 == "," || $0 == " " || $0 == ";" })
+            .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased() }
+            .filter { !$0.isEmpty }
+
+        extensions.formUnion(customExtensions)
+
+        return extensions
     }
 
     private func updateResults() {
@@ -153,7 +317,8 @@ final class SearchViewModel: ObservableObject {
             rawQuery: query,
             matchesFullPath: matchesFullPath,
             caseSensitive: caseSensitive,
-            hidesSystemFiles: hidesSystemFiles
+            hidesSystemFiles: hidesSystemFiles,
+            allowedExtensions: allowedExtensions
         )
 
         let searchableFiles = index + spotlightResults
@@ -174,7 +339,25 @@ final class SearchViewModel: ObservableObject {
             }
         }
 
-        results = nextResults
+        results = applySort(to: nextResults)
+        selectedResultIDs = selectedResultIDs.intersection(Set(results.map(\.id)))
+    }
+
+    private func applySort(to items: [SearchResult]) -> [SearchResult] {
+        let sortedItems: [SearchResult]
+
+        switch sortField {
+        case .name:
+            sortedItems = items.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .path:
+            sortedItems = items.sorted { $0.parentPath.localizedStandardCompare($1.parentPath) == .orderedAscending }
+        case .modified:
+            sortedItems = items.sorted { $0.modifiedAt < $1.modifiedAt }
+        case .size:
+            sortedItems = items.sorted { $0.size < $1.size }
+        }
+
+        return sortAscending ? sortedItems : sortedItems.reversed()
     }
 
     private func scheduleSpotlightSearch() {

@@ -15,6 +15,11 @@ Anythings is a native macOS file search app inspired by voidtools Everything. It
 - Remove indexed folders individually with a trash button or context menu.
 - Re-index command for refreshing results.
 - System, log, and temporary files (e.g. `.log`, `.tmp`, `.cache`, dotfiles) are hidden from results by default, toggleable in the sidebar.
+- Multi-select results with select all, deselect all, and invert selection (toolbar, `Selection` menu, or `⌘A` / `⇧⌘A` / `⌘I`).
+- Copy or move selected results to another folder.
+- Multiple result views: Details (sortable table), Large Icons, and Small Icons, with a sort menu for name, path, date modified, and size.
+- Right-click "Open Containing Folder" to open the enclosing directory, in addition to "Reveal in Finder".
+- Advanced file type filter in the sidebar covering PDF, Documents, Images, Audio, Video, Archives, Code, and Apps, plus a custom extensions field for any other format.
 - Search-themed macOS app icon generated during packaging.
 
 ## Requirements
