@@ -111,6 +111,7 @@ final class SearchViewModel: ObservableObject {
         didSet { scheduleUpdateResults(debounce: false) }
     }
     @Published var showingError = false
+    @Published var errorTitle = "Error"
     @Published var errorMessage = ""
 
     private var index: [IndexedFile] = []
@@ -159,10 +160,22 @@ final class SearchViewModel: ObservableObject {
 
     func removeRoot(_ root: IndexedRoot) {
         roots.removeAll { $0.id == root.id }
-        index.removeAll { file in
+
+        func belongsToRoot(_ file: IndexedFile) -> Bool {
             file.url.path == root.url.path || file.url.path.hasPrefix(root.url.path + "/")
         }
+
+        index.removeAll(where: belongsToRoot)
+        spotlightResults.removeAll(where: belongsToRoot)
+
+        if isIndexing {
+            // The in-flight scan still includes the removed root; restart it so its files do not reappear.
+            reindex()
+            return
+        }
+
         scheduleUpdateResults(debounce: false)
+        scheduleSpotlightSearch()
         statusText = "\(index.count.formatted()) items indexed"
     }
 
@@ -171,9 +184,13 @@ final class SearchViewModel: ObservableObject {
         let rootURLs = roots.map(\.url)
 
         guard !rootURLs.isEmpty else {
+            spotlightTask?.cancel()
+            updateResultsTask?.cancel()
+            isIndexing = false
             index = []
             spotlightResults = []
             results = []
+            selectedResultIDs = []
             statusText = "Add a folder to begin"
             return
         }
@@ -203,6 +220,7 @@ final class SearchViewModel: ObservableObject {
 
                 isIndexing = false
                 statusText = "Indexing failed"
+                errorTitle = "Indexing Error"
                 errorMessage = error.localizedDescription
                 showingError = true
             }
@@ -262,11 +280,22 @@ final class SearchViewModel: ObservableObject {
         }
 
         var failures: [String] = []
+        let destinationPath = destination.standardizedFileURL.path
 
         for item in items {
             let destinationURL = destination.appendingPathComponent(item.url.lastPathComponent)
+            let sourcePath = item.url.standardizedFileURL.path
 
             do {
+                if item.isDirectory,
+                   destinationPath == sourcePath || destinationPath.hasPrefix(sourcePath + "/") {
+                    throw NSError(
+                        domain: "Anythings.FileTransfer",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Cannot place a folder inside itself."]
+                    )
+                }
+
                 guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
                     throw CocoaError(.fileWriteFileExists)
                 }
@@ -282,11 +311,16 @@ final class SearchViewModel: ObservableObject {
             }
         }
 
-        if action == .move {
+        let destinationIsIndexed = roots.contains { root in
+            destinationPath == root.url.path || destinationPath.hasPrefix(root.url.path + "/")
+        }
+
+        if action == .move || destinationIsIndexed {
             reindex()
         }
 
         if !failures.isEmpty {
+            errorTitle = action == .copy ? "Copy Failed" : "Move Failed"
             errorMessage = failures.joined(separator: "\n")
             showingError = true
         } else {
@@ -442,7 +476,8 @@ final class SearchViewModel: ObservableObject {
                 guard !Task.isCancelled,
                       query.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedQuery,
                       matchesFullPath == requestMatchesFullPath,
-                      caseSensitive == requestCaseSensitive else {
+                      caseSensitive == requestCaseSensitive,
+                      roots.map(\.url) == rootURLs else {
                     return
                 }
 
@@ -459,6 +494,7 @@ final class SearchViewModel: ObservableObject {
                     return
                 }
 
+                errorTitle = "Search Error"
                 errorMessage = error.localizedDescription
                 showingError = true
                 if !isIndexing {
