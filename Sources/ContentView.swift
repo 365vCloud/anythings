@@ -78,7 +78,7 @@ struct ContentView: View {
                 searchFocused = true
             }
         }
-        .alert("Indexing Error", isPresented: $viewModel.showingError) {
+        .alert(viewModel.errorTitle, isPresented: $viewModel.showingError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage)

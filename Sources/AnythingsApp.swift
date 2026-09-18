@@ -25,22 +25,22 @@ struct AnythingsApp: App {
             }
 
             CommandMenu("Selection") {
-                Button("Select All") {
+                Button("Select All Results") {
                     viewModel.selectAll()
                 }
-                .keyboardShortcut("a", modifiers: [.command])
+                .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(viewModel.results.isEmpty)
 
-                Button("Deselect All") {
+                Button("Deselect All Results") {
                     viewModel.deselectAll()
                 }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .keyboardShortcut("a", modifiers: [.command, .option, .shift])
                 .disabled(viewModel.selectedResultIDs.isEmpty)
 
                 Button("Invert Selection") {
                     viewModel.invertSelection()
                 }
-                .keyboardShortcut("i", modifiers: [.command])
+                .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(viewModel.results.isEmpty)
 
                 Divider()

@@ -33,6 +33,8 @@ enum SpotlightSearch {
                 let output: String
                 do {
                     output = try runMDFind(predicate: predicate, root: root)
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     // A single unreachable or unmounted root should not abort the whole search.
                     NSLog("Spotlight search skipped for %@: %@", root.path, error.localizedDescription)
@@ -141,17 +143,37 @@ enum SpotlightSearch {
         process.standardError = errorPipe
 
         try process.run()
+
+        // Drain stderr concurrently so a chatty mdfind cannot block on a full pipe.
+        let errorReader = Thread {
+            _ = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        }
+        errorReader.start()
+
+        // Read stdout to EOF before waiting; reading after waitUntilExit() deadlocks
+        // once mdfind emits more than the pipe buffer (~64 KB) of results.
+        var outputData = Data()
+        let reader = outputPipe.fileHandleForReading
+        while true {
+            if Task.isCancelled {
+                process.terminate()
+                throw CancellationError()
+            }
+
+            let chunk = reader.availableData
+            if chunk.isEmpty {
+                break
+            }
+            outputData.append(chunk)
+        }
+
         process.waitUntilExit()
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
         guard process.terminationStatus == 0 else {
-            let message = String(data: errorData, encoding: .utf8) ?? "mdfind exited with status \(process.terminationStatus)"
             throw NSError(
                 domain: "Anythings.SpotlightSearch",
                 code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: message]
+                userInfo: [NSLocalizedDescriptionKey: "mdfind exited with status \(process.terminationStatus)"]
             )
         }
 
