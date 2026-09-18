@@ -39,7 +39,7 @@ struct IndexedFile: Hashable, Sendable {
     }
 }
 
-struct SearchResult: Identifiable, Hashable {
+struct SearchResult: Identifiable, Hashable, Sendable {
     let id: String
     let url: URL
     let name: String

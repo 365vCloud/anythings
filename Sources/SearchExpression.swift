@@ -1,6 +1,6 @@
 import Foundation
 
-struct SearchExpression {
+struct SearchExpression: Sendable {
     /// File extensions treated as system, log, or transient artifacts and hidden from results by default.
     private static let excludedExtensions: Set<String> = [
         "log", "logs", "tmp", "temp", "cache", "bak", "swp", "swo",

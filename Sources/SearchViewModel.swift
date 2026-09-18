@@ -26,7 +26,7 @@ enum ResultViewMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum SortField: String, CaseIterable, Identifiable {
+enum SortField: String, CaseIterable, Identifiable, Sendable {
     case name
     case path
     case modified
@@ -56,7 +56,7 @@ final class SearchViewModel: ObservableObject {
     @Published var query = "" {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: true)
             scheduleSpotlightSearch()
         }
     }
@@ -71,44 +71,44 @@ final class SearchViewModel: ObservableObject {
     @Published var matchesFullPath = false {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: false)
             scheduleSpotlightSearch()
         }
     }
     @Published var caseSensitive = false {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: false)
             scheduleSpotlightSearch()
         }
     }
     @Published var hidesSystemFiles = true {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: false)
             scheduleSpotlightSearch()
         }
     }
     @Published var selectedFileTypeCategoryIDs: Set<String> = [] {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: false)
             scheduleSpotlightSearch()
         }
     }
     @Published var customExtensionsText = "" {
         didSet {
             spotlightResults = []
-            updateResults()
+            scheduleUpdateResults(debounce: true)
             scheduleSpotlightSearch()
         }
     }
     @Published var viewMode: ResultViewMode = .table
     @Published var sortField: SortField = .name {
-        didSet { updateResults() }
+        didSet { scheduleUpdateResults(debounce: false) }
     }
     @Published var sortAscending = true {
-        didSet { updateResults() }
+        didSet { scheduleUpdateResults(debounce: false) }
     }
     @Published var showingError = false
     @Published var errorMessage = ""
@@ -117,6 +117,7 @@ final class SearchViewModel: ObservableObject {
     private var spotlightResults: [IndexedFile] = []
     private var indexTask: Task<Void, Never>?
     private var spotlightTask: Task<Void, Never>?
+    private var updateResultsTask: Task<Void, Never>?
 
     init() {
         let savedPaths = UserDefaults.standard.stringArray(forKey: Self.storedRootsKey) ?? []
@@ -161,7 +162,7 @@ final class SearchViewModel: ObservableObject {
         index.removeAll { file in
             file.url.path == root.url.path || file.url.path.hasPrefix(root.url.path + "/")
         }
-        updateResults()
+        scheduleUpdateResults(debounce: false)
         statusText = "\(index.count.formatted()) items indexed"
     }
 
@@ -193,7 +194,7 @@ final class SearchViewModel: ObservableObject {
                 isIndexing = false
                 indexProgress = 1
                 statusText = "\(files.count.formatted()) items indexed"
-                updateResults()
+                scheduleUpdateResults(debounce: false)
                 scheduleSpotlightSearch()
             } catch {
                 guard !Task.isCancelled else {
@@ -313,6 +314,60 @@ final class SearchViewModel: ObservableObject {
     }
 
     private func updateResults() {
+        scheduleUpdateResults(debounce: false)
+    }
+
+    private func scheduleUpdateResults(debounce: Bool) {
+        updateResultsTask?.cancel()
+
+        let snapshotIndex = index
+        let snapshotSpotlight = spotlightResults
+        let snapshotQuery = query
+        let snapshotMatchesFullPath = matchesFullPath
+        let snapshotCaseSensitive = caseSensitive
+        let snapshotHidesSystemFiles = hidesSystemFiles
+        let snapshotAllowedExtensions = allowedExtensions
+        let snapshotSortField = sortField
+        let snapshotSortAscending = sortAscending
+
+        updateResultsTask = Task {
+            if debounce {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled else { return }
+            }
+
+            let computedResults = await Task.detached(priority: .userInitiated) {
+                SearchViewModel.computeResults(
+                    index: snapshotIndex,
+                    spotlightResults: snapshotSpotlight,
+                    query: snapshotQuery,
+                    matchesFullPath: snapshotMatchesFullPath,
+                    caseSensitive: snapshotCaseSensitive,
+                    hidesSystemFiles: snapshotHidesSystemFiles,
+                    allowedExtensions: snapshotAllowedExtensions,
+                    sortField: snapshotSortField,
+                    sortAscending: snapshotSortAscending
+                )
+            }.value
+
+            guard !Task.isCancelled else { return }
+
+            results = computedResults
+            selectedResultIDs = selectedResultIDs.intersection(Set(results.map(\.id)))
+        }
+    }
+
+    private nonisolated static func computeResults(
+        index: [IndexedFile],
+        spotlightResults: [IndexedFile],
+        query: String,
+        matchesFullPath: Bool,
+        caseSensitive: Bool,
+        hidesSystemFiles: Bool,
+        allowedExtensions: Set<String>,
+        sortField: SortField,
+        sortAscending: Bool
+    ) -> [SearchResult] {
         let search = SearchExpression(
             rawQuery: query,
             matchesFullPath: matchesFullPath,
@@ -339,14 +394,13 @@ final class SearchViewModel: ObservableObject {
             }
         }
 
-        results = applySort(to: nextResults)
-        selectedResultIDs = selectedResultIDs.intersection(Set(results.map(\.id)))
+        return applySort(to: nextResults, field: sortField, ascending: sortAscending)
     }
 
-    private func applySort(to items: [SearchResult]) -> [SearchResult] {
+    private nonisolated static func applySort(to items: [SearchResult], field: SortField, ascending: Bool) -> [SearchResult] {
         let sortedItems: [SearchResult]
 
-        switch sortField {
+        switch field {
         case .name:
             sortedItems = items.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         case .path:
@@ -357,7 +411,7 @@ final class SearchViewModel: ObservableObject {
             sortedItems = items.sorted { $0.size < $1.size }
         }
 
-        return sortAscending ? sortedItems : sortedItems.reversed()
+        return ascending ? sortedItems : sortedItems.reversed()
     }
 
     private func scheduleSpotlightSearch() {
