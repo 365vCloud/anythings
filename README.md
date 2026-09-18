@@ -1,6 +1,8 @@
 # Anythings
 
-Anythings 是一款参考 [voidtools Everything](https://www.voidtools.com/zh-cn/support/everything/) 检索理念、面向 macOS 平台原生开发的文件检索工具。使用 SwiftUI 构建，为你自选的文件夹建立本地索引，并结合 macOS Spotlight 提供即时检索，输入关键词即可快速过滤出结果。
+Anythings 是一款面向 macOS 平台原生开发的文件检索工具。使用 SwiftUI 构建，为你自选的文件夹建立本地索引，并结合 macOS Spotlight 提供即时检索，输入关键词即可快速过滤出结果。
+
+本项目为个人兴趣开发，仅供个人学习与使用，不用于任何商业用途。
 
 详细功能说明请见 [FEATURES.md](FEATURES.md)，版本迭代历史请见 [CHANGELOG.md](CHANGELOG.md)。
 
